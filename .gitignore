@@ -1,0 +1,19 @@
+# Dependency directories
+node_modules/
+jspm_packages/
+
+# Local databases and backups
+*.db
+*.sqlite
+*.sqlite3
+
+# Local log files
+*.log
+*.jsonl
+
+# Local custom title configs (optional to ignore)
+metadata.json
+
+# OS files
+.DS_Store
+Thumbs.db

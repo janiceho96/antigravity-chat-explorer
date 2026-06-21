@@ -1,0 +1,13 @@
+{
+  "name": "gemini-chat-explorer",
+  "version": "1.0.0",
+  "description": "Browse and search legacy and active Gemini/AI CLI conversations",
+  "main": "server.js",
+  "type": "module",
+  "scripts": {
+    "start": "node server.js"
+  },
+  "dependencies": {
+    "express": "^4.19.2"
+  }
+}

@@ -1,0 +1,134 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Gemini & AI Agent Chat Explorer</title>
+    <link rel="stylesheet" href="style.css">
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;500;600;700;800&family=Plus+Jakarta+Sans:wght@300;400;500;600;700&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+</head>
+<body>
+    <div class="app-container">
+        <!-- Sidebar -->
+        <aside class="sidebar">
+            <div class="sidebar-header">
+                <div class="logo-area">
+                    <span class="logo-icon">🪐</span>
+                    <h2>Antigravity Explorer</h2>
+                    <button class="theme-toggle-btn" id="theme-toggle" title="Toggle Light/Dark Theme" style="margin-left: auto; background: transparent; border: none; cursor: pointer; font-size: 1.1rem; padding: 4px; display: flex; align-items: center; justify-content: center;">🌓</button>
+                </div>
+                <div class="stats-banner">
+                    <span class="sessions-count" id="session-count-badge">0 sessions</span>
+                </div>
+            </div>
+            
+            <div class="search-area">
+                <div class="search-input-wrapper">
+                    <span class="search-icon">🔍</span>
+                    <input type="text" id="search-input" placeholder="Search prompts, tools, or files...">
+                </div>
+            </div>
+            
+            <div class="filter-area">
+                <button class="filter-btn active" data-filter="all" id="btn-filter-all">
+                    <span>All</span>
+                </button>
+                <button class="filter-btn" data-filter="sqlite" id="btn-filter-sqlite">
+                    <span class="dot sqlite-dot"></span>
+                    <span>Active</span>
+                </button>
+                <button class="filter-btn" data-filter="legacy-jsonl" id="btn-filter-legacy">
+                    <span class="dot legacy-dot"></span>
+                    <span>Legacy</span>
+                </button>
+            </div>
+            
+            <div class="sessions-list" id="sessions-container">
+                <!-- Loaded session cards will go here -->
+            </div>
+        </aside>
+
+        <!-- Main Chat Pane -->
+        <main class="chat-panel">
+            <!-- Welcome View (Default State) -->
+            <div class="welcome-view" id="welcome-view">
+                <div class="welcome-card">
+                    <div class="welcome-glow-circle"></div>
+                    <div class="welcome-icon">📂</div>
+                    <h1>Chat History Explorer</h1>
+                    <p>Select a legacy JSONL session or an active SQLite database workspace from the sidebar to browse dialogue turns, trace tool executions, and audit generated scripts.</p>
+                    <div class="stats-row">
+                        <div class="stat-pill">
+                            <span class="stat-num" id="stat-sqlite">0</span>
+                            <span class="stat-label">Active DBs</span>
+                        </div>
+                        <div class="stat-pill">
+                            <span class="stat-num" id="stat-legacy">0</span>
+                            <span class="stat-label">Legacy Logs</span>
+                        </div>
+                    </div>
+                </div>
+            </div>
+            
+            <!-- Chat View (Active State) -->
+            <div class="chat-view hidden" id="chat-view">
+                <div class="chat-header">
+                    <div class="header-left">
+                        <span class="header-chat-icon">💬</span>
+                        <div class="header-info">
+                            <div style="display: flex; align-items: center; gap: 8px;">
+                                <h1 id="session-title">Select a session</h1>
+                                <button class="rename-btn" id="rename-session-btn" title="Rename this conversation" style="background: transparent; border: none; cursor: pointer; font-size: 0.95rem; padding: 4px; display: flex; align-items: center; justify-content: center; opacity: 0.6; transition: opacity 0.2s;">✏️</button>
+                            </div>
+                            <div class="header-meta">
+                                <span class="source-badge" id="session-badge">SQLite</span>
+                                <span class="file-path-display" id="session-path-display">No session loaded</span>
+                            </div>
+                        </div>
+                    </div>
+                    <div class="header-right" style="display: flex; gap: 12px; align-items: center;">
+                        <div class="session-stat-badge">
+                            <span class="badge-label">MESSAGES</span>
+                            <span class="badge-value" id="msg-count-display">0</span>
+                        </div>
+                        <div class="session-stat-badge">
+                            <span class="badge-label">SIZE</span>
+                            <span class="badge-value" id="size-display">0 MB</span>
+                        </div>
+                        <button class="delete-btn" id="delete-session-btn" title="Delete Chat Session">
+                            <span>🗑️</span> Delete
+                        </button>
+                    </div>
+                </div>
+                
+                <div class="chat-tab-bar">
+                    <button class="chat-tab-btn active" id="tab-dialogue">
+                        <span class="tab-icon">💬</span> Dialogue Feed
+                    </button>
+                    <button class="chat-tab-btn" id="tab-revision">
+                        <span class="tab-icon">🃏</span> Revision Deck
+                    </button>
+                    <button class="chat-tab-btn" id="tab-saved">
+                        <span class="tab-icon">⭐</span> Saved Cards
+                    </button>
+                </div>
+                
+                <div class="chat-messages" id="messages-container">
+                    <!-- Dynamic chat message nodes -->
+                </div>
+                
+                <div class="revision-deck hidden" id="revision-container">
+                    <!-- Dynamic Revision Cards -->
+                </div>
+                
+                <div class="revision-deck hidden" id="saved-container">
+                    <!-- Saved Revision Cards -->
+                </div>
+            </div>
+        </main>
+    </div>
+    <script src="app.js"></script>
+</body>
+</html>
