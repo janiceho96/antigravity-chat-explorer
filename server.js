@@ -21,6 +21,60 @@ function getCustomTitles() {
     return {};
 }
 
+function parseMessage(msg) {
+    if (!msg) return null;
+    
+    // Ignore checkpoint/system/etc
+    if (msg.type === 'checkpoint' || msg.type === 'system' || msg.type === '$set') {
+        return null;
+    }
+    
+    let text = '';
+    const contentVal = msg.content;
+    if (Array.isArray(contentVal)) {
+        // Only include non-thought content parts
+        const cleanParts = contentVal.filter(p => !p.thought);
+        text = cleanParts.map(p => p.text || '').join('');
+    } else if (typeof contentVal === 'string') {
+        text = contentVal;
+    }
+    
+    const tool_info = [];
+    const tool_calls = msg.toolCalls || [];
+    for (const tc of tool_calls) {
+        let outputStr = '';
+        if (tc.result) {
+            if (Array.isArray(tc.result) && tc.result.length > 0) {
+                const resObj = tc.result[0];
+                if (resObj.functionResponse && resObj.functionResponse.response) {
+                    outputStr = resObj.functionResponse.response.output || JSON.stringify(resObj.functionResponse.response);
+                } else {
+                    outputStr = JSON.stringify(resObj);
+                }
+            } else {
+                outputStr = typeof tc.result === 'string' ? tc.result : JSON.stringify(tc.result);
+            }
+        }
+        
+        tool_info.push({
+            id: tc.id || '',
+            name: tc.name,
+            args: tc.args || {},
+            status: tc.result ? 'success' : 'pending',
+            output: outputStr
+        });
+    }
+    
+    const role = (msg.type === 'user') ? 'User' : 'Agent';
+    
+    return {
+        role,
+        text: text.trim(),
+        tools: tool_info,
+        timestamp: msg.timestamp
+    };
+}
+
 app.use(express.static('public'));
 app.use(express.json());
 
@@ -69,7 +123,7 @@ app.get('/api/sessions', (req, res) => {
     // 1. Scan Legacy JSONL files
     if (fs.existsSync(LEGACY_DIR)) {
         try {
-            const files = fs.readdirSync(LEGACY_DIR).filter(f => f.endsWith('.jsonl'));
+            const files = fs.readdirSync(LEGACY_DIR).filter(f => f.endsWith('.jsonl') || f.endsWith('.json'));
             for (const f of files) {
                 const fullPath = path.join(LEGACY_DIR, f);
                 const stat = fs.statSync(fullPath);
@@ -81,40 +135,82 @@ app.get('/api/sessions', (req, res) => {
                 try {
                     const { firstLine, lastChunk } = readFirstAndLastLines(fullPath);
                     
-                    if (firstLine.trim()) {
-                        const firstData = JSON.parse(firstLine);
-                        if (firstData.startTime) {
-                            date = new Date(firstData.startTime);
+                    if (f.endsWith('.json') && firstLine.trim() === '{') {
+                        // Standard formatted JSON file
+                        const fullContent = fs.readFileSync(fullPath, 'utf-8');
+                        const parsed = JSON.parse(fullContent);
+                        if (parsed.startTime) {
+                            date = new Date(parsed.startTime);
                         }
-                    }
-                    
-                    if (lastChunk.trim()) {
-                        // Find all instances of $set with summary in the last chunk
-                        const matches = [...lastChunk.matchAll(/\{\"\$set\"[^}]*\"summary\"[^}]*\}/g)];
-                        if (matches.length > 0) {
-                            const lastMatch = matches[matches.length - 1][0];
-                            try {
-                                const lastData = JSON.parse(lastMatch);
-                                if (lastData.$set && lastData.$set.summary) {
-                                    const sumVal = lastData.$set.summary;
-                                    // Sometimes summary is stringified JSON, check if we need to parse it
-                                    if (sumVal.trim().startsWith('{')) {
-                                        try {
-                                            const inner = JSON.parse(sumVal);
-                                            summary = inner.response || inner.summary || sumVal;
-                                        } catch (e) {
+                        if (parsed.messages && parsed.messages.length > 0) {
+                            const firstMsg = parsed.messages[0];
+                            if (firstMsg.content) {
+                                if (Array.isArray(firstMsg.content)) {
+                                    const cleanParts = firstMsg.content.filter(p => !p.thought);
+                                    summary = cleanParts.map(p => p.text || '').join('');
+                                } else if (typeof firstMsg.content === 'string') {
+                                    summary = firstMsg.content;
+                                }
+                            }
+                        }
+                    } else {
+                        // JSONL file
+                        if (firstLine.trim()) {
+                            const firstData = JSON.parse(firstLine);
+                            if (firstData.startTime) {
+                                date = new Date(firstData.startTime);
+                            }
+                        }
+                        
+                        if (lastChunk.trim()) {
+                            // Find all instances of $set with summary in the last chunk
+                            const matches = [...lastChunk.matchAll(/\{\"\$set\"[^}]*\"summary\"[^}]*\}/g)];
+                            if (matches.length > 0) {
+                                const lastMatch = matches[matches.length - 1][0];
+                                try {
+                                    const lastData = JSON.parse(lastMatch);
+                                    if (lastData.$set && lastData.$set.summary) {
+                                        const sumVal = lastData.$set.summary;
+                                        if (sumVal.trim().startsWith('{')) {
+                                            try {
+                                                const inner = JSON.parse(sumVal);
+                                                summary = inner.response || inner.summary || sumVal;
+                                            } catch (e) {
+                                                summary = sumVal;
+                                            }
+                                        } else {
                                             summary = sumVal;
                                         }
-                                    } else {
-                                        summary = sumVal;
+                                    }
+                                } catch (e) {}
+                            } else {
+                                // Try to find $set with messages
+                                const msgMatches = [...lastChunk.matchAll(/\{\"\$set\"[^}]*\"messages\"[^}]*\}/g)];
+                                if (msgMatches.length > 0) {
+                                    const lastMatch = msgMatches[msgMatches.length - 1][0];
+                                    try {
+                                        const lastData = JSON.parse(lastMatch);
+                                        if (lastData.$set && Array.isArray(lastData.$set.messages) && lastData.$set.messages.length > 0) {
+                                            const firstMsg = lastData.$set.messages.find(m => m.type === 'user');
+                                            if (firstMsg && firstMsg.content) {
+                                                if (Array.isArray(firstMsg.content)) {
+                                                    const cleanParts = firstMsg.content.filter(p => !p.thought);
+                                                    summary = cleanParts.map(p => p.text || '').join('');
+                                                } else if (typeof firstMsg.content === 'string') {
+                                                    summary = firstMsg.content;
+                                                }
+                                            }
+                                        }
+                                    } catch (e) {}
+                                }
+                                
+                                // Fallback: try to parse the first User content in the file as a title
+                                if (summary === 'Legacy Session') {
+                                    const userMatches = [...lastChunk.matchAll(/\"type\":\"user\",\"content\":\[\{\"text\":\"([^\"]+)\"/g)];
+                                    if (userMatches.length > 0) {
+                                        summary = userMatches[0][1].replace(/\\n/g, ' ');
                                     }
                                 }
-                            } catch (e) {}
-                        } else {
-                            // Fallback: try to parse the first User content in the file as a title
-                            const userMatches = [...lastChunk.matchAll(/\"type\":\"user\",\"content\":\[\{\"text\":\"([^\"]+)\"/g)];
-                            if (userMatches.length > 0) {
-                                summary = userMatches[0][1].replace(/\\n/g, ' ');
                             }
                         }
                     }
@@ -204,7 +300,10 @@ app.get('/api/session/:id', (req, res) => {
         // Resolve legacy JSONL path safely by looking for corresponding file in LEGACY_DIR
         try {
             const files = fs.readdirSync(LEGACY_DIR);
-            const matchedFile = files.find(f => f === `${id}.jsonl` || f === `${id}.json` || f.endsWith(`${id}.jsonl`) || f.endsWith(`${id}.json`));
+            let matchedFile = files.find(f => f === `${id}.jsonl` || f.endsWith(`${id}.jsonl`));
+            if (!matchedFile) {
+                matchedFile = files.find(f => f === `${id}.json` || f.endsWith(`${id}.json`));
+            }
             if (!matchedFile) {
                 return res.status(404).json({ error: 'Legacy session file not found' });
             }
@@ -217,84 +316,94 @@ app.get('/api/session/:id', (req, res) => {
             return res.status(500).json({ error: 'Failed to access legacy chat directory: ' + e.message });
         }
         
-        // Parse legacy JSONL file line by line
+        // Parse legacy JSON/JSONL file
         try {
             const content = fs.readFileSync(resolvedPath, 'utf-8');
-            const lines = content.trim().split('\n');
             const messages = [];
             let summary = 'Legacy Session';
             
-            for (const line of lines) {
-                if (!line.trim()) continue;
-                let data;
-                try {
-                    data = JSON.parse(line);
-                } catch (err) {
-                    console.warn(`Ignoring malformed JSONL line in session ${id}: ${err.message}`);
-                    continue;
-                }
-                
-                // Generic turn extraction: handle any model name dynamically without hardcoding whitelists
-                if (data.type && data.type !== 'checkpoint' && data.type !== 'system' && data.type !== '$set') {
-                    let text = '';
-                    const contentVal = data.content;
-                    if (Array.isArray(contentVal)) {
-                        text = contentVal.map(p => p.text || '').join('');
-                    } else if (typeof contentVal === 'string') {
-                        text = contentVal;
+            // Try to parse the file as a single JSON object (for standard .json files)
+            let isStandardJson = false;
+            try {
+                const parsedData = JSON.parse(content.trim());
+                if (parsedData && Array.isArray(parsedData.messages)) {
+                    isStandardJson = true;
+                    if (parsedData.sessionId) {
+                        summary = parsedData.sessionId;
                     }
                     
-                    const tool_info = [];
-                    const tool_calls = data.toolCalls || [];
-                    for (const tc of tool_calls) {
-                        let outputStr = '';
-                        if (tc.result) {
-                            if (Array.isArray(tc.result) && tc.result.length > 0) {
-                                const resObj = tc.result[0];
-                                if (resObj.functionResponse && resObj.functionResponse.response) {
-                                    outputStr = resObj.functionResponse.response.output || JSON.stringify(resObj.functionResponse.response);
-                                } else {
-                                    outputStr = JSON.stringify(resObj);
-                                }
-                            } else {
-                                outputStr = typeof tc.result === 'string' ? tc.result : JSON.stringify(tc.result);
+                    for (const msg of parsedData.messages) {
+                        const parsedMsg = parseMessage(msg);
+                        if (parsedMsg) {
+                            messages.push(parsedMsg);
+                        }
+                    }
+                }
+            } catch (jsonErr) {
+                // Not standard JSON, fallback to line-by-line JSONL parsing
+                isStandardJson = false;
+            }
+            
+            if (!isStandardJson) {
+                const lines = content.trim().split('\n');
+                for (const line of lines) {
+                    if (!line.trim()) continue;
+                    let data;
+                    try {
+                        data = JSON.parse(line);
+                    } catch (err) {
+                        console.warn(`Ignoring malformed JSONL line in session ${id}: ${err.message}`);
+                        continue;
+                    }
+                    
+                    if (data.$set && Array.isArray(data.$set.messages)) {
+                        // Re-initialize/overwrite messages list with the messages from $set.messages
+                        messages.length = 0;
+                        for (const msg of data.$set.messages) {
+                            const parsedMsg = parseMessage(msg);
+                            if (parsedMsg) {
+                                messages.push(parsedMsg);
                             }
                         }
-                        
-                        tool_info.push({
-                            id: tc.id || '',
-                            name: tc.name,
-                            args: tc.args || {},
-                            status: tc.result ? 'success' : 'pending',
-                            output: outputStr
-                        });
+                    } else if (data.type && data.type !== 'checkpoint' && data.type !== 'system' && data.type !== '$set') {
+                        const parsedMsg = parseMessage(data);
+                        if (parsedMsg) {
+                            messages.push(parsedMsg);
+                        }
                     }
                     
-                    messages.push({
-                        role: data.type === 'user' ? 'User' : 'Agent',
-                        text: text.trim(),
-                        tools: tool_info,
-                        timestamp: data.timestamp
-                    });
-                } else if (data.$set && data.$set.summary) {
-                    const sumVal = data.$set.summary;
-                    if (sumVal.trim().startsWith('{')) {
-                        try {
-                            const inner = JSON.parse(sumVal);
-                            summary = inner.response || inner.summary || sumVal;
-                        } catch (e) {
+                    if (data.$set && data.$set.summary) {
+                        const sumVal = data.$set.summary;
+                        if (sumVal.trim().startsWith('{')) {
+                            try {
+                                const inner = JSON.parse(sumVal);
+                                summary = inner.response || inner.summary || sumVal;
+                            } catch (e) {
+                                summary = sumVal;
+                            }
+                        } else {
                             summary = sumVal;
                         }
-                    } else {
-                        summary = sumVal;
                     }
                 }
             }
+            
+            // Extract a summary from the first User message if we couldn't resolve a better title
+            if (summary === 'Legacy Session' && messages.length > 0) {
+                const firstUser = messages.find(m => m.role === 'User');
+                if (firstUser && firstUser.text) {
+                    summary = firstUser.text;
+                }
+            }
+            if (summary.length > 80) {
+                summary = summary.substring(0, 77) + '...';
+            }
+            
             const customTitles = getCustomTitles();
             const finalSummary = customTitles[id] || summary;
             return res.json({ id, summary: finalSummary, messages });
         } catch (e) {
-            return res.status(500).json({ error: 'Failed to read JSONL file: ' + e.message });
+            return res.status(500).json({ error: 'Failed to read session file: ' + e.message });
         }
     }
 });
