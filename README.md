@@ -2,7 +2,19 @@
 
 A local log explorer and revision tool for Google Antigravity (AGY) sessions. It parses SQLite active workspace databases and legacy JSONL logs to let you browse dialogue turns, trace tool executions, and build custom revision study spaces.
 
-![Antigravity Chat Explorer Screenshot](./screenshot.png)
+## 🖼️ Application Interfaces
+
+### Dialogue Feed (Dark Mode)
+![Dialogue Feed](./screenshot_dialogue.png)
+
+### Revision Deck (Automatically Extracted Cards)
+![Revision Deck](./screenshot_revision.png)
+
+### Saved Cards (Custom Revision Space)
+![Saved Cards](./screenshot_saved.png)
+
+### Light Mode Theme Toggle
+![Light Mode Theme](./screenshot_light_mode.png)
 
 ## 🚀 Key Features
 
