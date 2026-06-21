@@ -226,7 +226,13 @@ app.get('/api/session/:id', (req, res) => {
             
             for (const line of lines) {
                 if (!line.trim()) continue;
-                const data = JSON.parse(line);
+                let data;
+                try {
+                    data = JSON.parse(line);
+                } catch (err) {
+                    console.warn(`Ignoring malformed JSONL line in session ${id}: ${err.message}`);
+                    continue;
+                }
                 
                 // Generic turn extraction: handle any model name dynamically without hardcoding whitelists
                 if (data.type && data.type !== 'checkpoint' && data.type !== 'system' && data.type !== '$set') {
